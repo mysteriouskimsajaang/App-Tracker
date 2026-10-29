@@ -153,8 +153,10 @@ plagiarized the work of other students and/or persons.
 					});
 
 					console.log('[Login] Response status:', response.status);
-					
-					const data = await response.json();
+					const contentType = response.headers.get('content-type') || '';
+					const data = contentType.includes('application/json')
+						? await response.json()
+						: { error: 'The login API is unavailable at this URL. Open the Render service URL instead of the Netlify URL.' };
 
 					if (!response.ok) {
 						throw new Error(data.error || 'Login failed');

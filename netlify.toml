@@ -1,0 +1,14 @@
+[build]
+  command = "npm install"
+  publish = "public"
+
+[functions]
+  # Templates and static assets the Express app reads at runtime
+  included_files = ["views/**", "public/**"]
+
+# Send every request to the Express app so Handlebars routes and the API work
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/server"
+  status = 200
+  force = true

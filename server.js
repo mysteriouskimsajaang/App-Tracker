@@ -6,7 +6,7 @@ const express = require('express');
 const { engine } = require('express-handlebars');
 const bodyParser = require('body-parser');
 const session = require('express-session');
-const { MongoStore } = require('connect-mongo');
+const MongoStore = require('connect-mongo');
 const compression = require('compression');
 const fetch = require('node-fetch');
 const passport = require('passport');
@@ -25,10 +25,10 @@ const axios = require('axios'); // Ensure axios is installed: npm install axios
 const app = express();
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/backlog-hero';
-const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+const BASE_URL = process.env.BASE_URL || process.env.URL || `http://localhost:${PORT}`;
 app.use(express.json({ limit: '150mb' })); // Allow large base64 image and video payloads
 const sessionStore = process.env.NODE_ENV === 'production'
-  ? new MongoStore({
+  ? MongoStore.create({
       mongoUrl: MONGO_URI,
       collectionName: 'sessions',
       ttl: 30 * 24 * 60 * 60,
@@ -349,10 +349,13 @@ app.use(passport.session());
 let dbConnected = false;
 
 const initializeServer = async () => {
-  app.listen(PORT, () => {
-    console.log(`\n  Backlog Hero server running at http://localhost:${PORT}`);
-    console.log('  Database: Connecting...');
-  });
+  // When imported by the Netlify Function, the function handles requests instead of app.listen
+  if (require.main === module) {
+    app.listen(PORT, () => {
+      console.log(`\n  Backlog Hero server running at http://localhost:${PORT}`);
+      console.log('  Database: Connecting...');
+    });
+  }
 
   try {
     await connectDB();
@@ -401,7 +404,7 @@ const initializeServer = async () => {
   */
 };
 
-initializeServer();
+const serverReady = initializeServer();
 
 // Warm up IGDB game count in background after startup
 setTimeout(() => getIgdbGameCount(), 2000);
@@ -3200,3 +3203,5 @@ app.post('/api/steam/sync', isLoggedIn, async (req, res) => {
     res.status(500).json({ error: 'Steam sync failed. Please try again.' });
   }
 });
+
+module.exports = { app, serverReady };

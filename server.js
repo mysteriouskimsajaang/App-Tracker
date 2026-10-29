@@ -6,7 +6,7 @@ const express = require('express');
 const { engine } = require('express-handlebars');
 const bodyParser = require('body-parser');
 const session = require('express-session');
-const { MongoStore } = require('connect-mongo');
+const MongoStore = require('connect-mongo');
 const compression = require('compression');
 const fetch = require('node-fetch');
 const passport = require('passport');
@@ -28,7 +28,7 @@ const MONGO_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/backlog-
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 app.use(express.json({ limit: '150mb' })); // Allow large base64 image and video payloads
 const sessionStore = process.env.NODE_ENV === 'production'
-  ? new MongoStore({
+  ? MongoStore.create({
       mongoUrl: MONGO_URI,
       collectionName: 'sessions',
       ttl: 30 * 24 * 60 * 60,

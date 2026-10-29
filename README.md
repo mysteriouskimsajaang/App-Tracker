@@ -4,6 +4,8 @@ Backlog Hero is a social game-library tracker for discovering games, organizing 
 personal backlog, tracking progress, and connecting with other players. The
 application is built with Node.js, Express, Handlebars, and MongoDB.
 
+<!-- Project author: Kane Joshua Ibanez -->
+
 ## Features
 
 - Account registration and password-based login
@@ -229,4 +231,3 @@ integration credentials depending on the scenario being exercised.
 - Use HTTPS for deployed OAuth and session-based environments.
 - Use a separate database for local seed data and production data.
 - Rotate credentials if they are accidentally exposed.
-

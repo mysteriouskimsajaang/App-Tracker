@@ -24,8 +24,11 @@ const axios = require('axios'); // Ensure axios is installed: npm install axios
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+if (process.env.NODE_ENV === 'production' && !process.env.MONGODB_URI) {
+  throw new Error('MONGODB_URI is required in production. Add your MongoDB Atlas connection string in Render environment variables.');
+}
 const MONGO_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/backlog-hero';
-const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+const BASE_URL = (process.env.BASE_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`).replace(/\/+$/, '');
 app.use(express.json({ limit: '150mb' })); // Allow large base64 image and video payloads
 const sessionStore = process.env.NODE_ENV === 'production'
   ? MongoStore.create({

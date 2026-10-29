@@ -1,0 +1,220 @@
+<!-- ******************************************************************************
+This is to certify that this project is my own work, based on my personal
+ efforts in studying and applying the concepts learned. I have constructed
+the functions and their respective algorithms and corresponding code by
+myself. The program was run, tested, and debugged by my own efforts. I
+further certify that I have not copied in part or whole or otherwise
+plagiarized the work of other students and/or persons.
+<Your Full Name> - <ID Number> - <Section>
+    <Kane Joshua Ibanez>
+    <Kane Joshua Ibanez>
+****************************************************************************** -->
+<style>
+		/* Page-specific: auth page radial gradient background */
+		body { background: radial-gradient(circle at 20% 20%, rgba(83, 131, 232, 0.15), transparent 30%), radial-gradient(circle at 80% 0%, rgba(167, 139, 250, 0.1), transparent 25%), radial-gradient(circle at 60% 90%, rgba(45, 212, 191, 0.06), transparent 30%), var(--bg-base); }
+		.navbar .btn-outline-primary, .navbar .btn-outline-primary.active { background-color: transparent !important; }
+		.link-accent { color: var(--primary); text-decoration: none; }
+		.link-accent:hover { color: var(--accent); }
+		.badge-accent { background: transparent; border: 1px solid var(--accent); color: #9ee8d8; }
+		.provider-btn img, .provider-btn svg { width: 24px; height: 24px; flex-shrink: 0; }
+		.provider-btn span { flex: 1; text-align: center; }
+		.password-toggle-btn { background-color: transparent; border: 1px solid var(--border); color: var(--primary); padding: 0.375rem 0.75rem; transition: background-color var(--duration) var(--ease), border-color var(--duration) var(--ease); font-size: 0.9rem; cursor: pointer; }
+		.password-toggle-btn:hover { background-color: rgba(83, 131, 232, 0.1); border-color: var(--primary); }
+		.password-toggle-btn:active { transform: scale(0.95); }
+		/* Competitive auth card enhancements */
+		.auth-card { animation: fadeInScale 0.6s ease both; }
+		@keyframes fadeInScale { from { opacity: 0; transform: scale(0.96) translateY(16px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+		.auth-card h3 { background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+	</style>{{> navbar-auth activePage="login"}}
+
+	<div class="auth-wrapper">
+		<div class="container">
+			<div class="row justify-content-center">
+				<!-- Login form card — col-lg-5 keeps it narrow and centered.
+				     p-md-5 adds extra padding on desktop for breathing room -->
+				<div class="col-md-7 col-lg-5">
+					<div class="auth-card p-4 p-md-5">
+						<div class="d-flex align-items-start justify-content-between mb-4">
+							<div>
+								<p class="text-uppercase text-muted small mb-1">Welcome back</p>
+								<h3 class="fw-bold mb-1">Log in to your backlog</h3>
+								<p class="text-muted small mb-0">Stay on top of your gaming goals.</p>
+							</div>
+						</div>
+
+						<!-- Login form — email/password + SSO providers.
+						     Connects to backend API for authentication -->
+						<form id="loginForm">
+							<div id="errorAlert" class="alert alert-danger d-none" role="alert"></div>
+							<div id="successAlert" class="alert alert-success d-none" role="alert"></div>
+							
+							<div class="mb-3">
+								<label class="form-label">Email or Username</label>
+								<input type="text" class="form-control" id="username" placeholder="username or email" required>
+							</div>
+							<div class="mb-3">
+								<div class="d-flex justify-content-between align-items-center">
+									<label class="form-label mb-0">Password</label>
+									<a href="#" class="link-accent small">Forgot?</a>
+								</div>
+								<div class="input-group">
+									<input id="password" type="password" class="form-control" placeholder="••••••••" required>
+									<button class="password-toggle-btn" type="button" id="togglePassword" title="Show/Hide password">
+										<i class="bi bi-eye-slash" id="toggleIcon"></i>
+									</button>
+								</div>
+							</div>
+							<div class="d-flex align-items-center justify-content-between mb-4">
+								<div class="form-check">
+									<input class="form-check-input" type="checkbox" value="" id="remember">
+									<label class="form-check-label text-muted" for="remember">Keep me signed in</label>
+								</div>
+								<span class="text-muted small">Secure login</span>
+							</div>
+							<div class="d-grid mb-3">
+								<button type="submit" class="btn btn-primary py-2 w-100 fw-bold auth-btn" id="loginBtn">Log In</button>
+							</div>
+
+							<!-- Separator -->
+							<div class="d-flex align-items-center my-4">
+								<hr class="flex-grow-1 border-secondary" style="opacity: 0.3;">
+								<span class="mx-3 text-muted small fw-bold text-uppercase letter-spacing-1">Or continue with</span>
+								<hr class="flex-grow-1 border-secondary" style="opacity: 0.3;">
+							</div>
+
+							<!-- SSO provider buttons — Steam and Google -->
+							<div class="d-grid gap-3">
+								<button type="button" class="btn btn-outline-light border-secondary py-2 provider-btn d-flex align-items-center justify-content-center gap-3 transition-all" id="steamLoginBtn" style="border-radius: 8px;">
+									<span class="fw-semibold">Log in with Steam</span>
+								</button>
+								<button type="button" class="btn btn-outline-light border-secondary py-2 provider-btn d-flex align-items-center justify-content-center gap-3 transition-all" id="googleLoginBtn" style="border-radius: 8px;">
+									<span class="fw-semibold">Log in with Google</span>
+								</button>
+							</div>
+						</form>
+
+						<p class="text-center text-muted mb-0">New to Backlog Hero? <a class="link-accent" href="/register">Create an account</a></p>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- Login form and API handling scripts -->
+	<script>
+		// Check for OAuth errors passed from backend
+		const oauthError = `{{{oauthError}}}`;
+		if (oauthError) {
+			const errorAlert = document.getElementById('errorAlert');
+			errorAlert.textContent = '✗ ' + oauthError;
+			errorAlert.classList.remove('d-none');
+		}
+		
+		// Password show/hide toggle
+		const togglePassword = document.getElementById('togglePassword');
+		const passwordInput = document.getElementById('password');
+		const toggleIcon = document.getElementById('toggleIcon');
+		if (togglePassword && passwordInput) {
+			togglePassword.addEventListener('click', (e) => {
+				e.preventDefault();
+				const isHidden = passwordInput.type === 'password';
+				passwordInput.type = isHidden ? 'text' : 'password';
+				toggleIcon.className = isHidden ? 'bi bi-eye' : 'bi bi-eye-slash';
+			});
+		}
+
+		// Login form submission
+		const loginForm = document.getElementById('loginForm');
+		if (loginForm) {
+			loginForm.addEventListener('submit', async (e) => {
+				e.preventDefault();
+				
+				const username = document.getElementById('username').value;
+				const password = document.getElementById('password').value;
+				const loginBtn = document.getElementById('loginBtn');
+				const errorAlert = document.getElementById('errorAlert');
+				const successAlert = document.getElementById('successAlert');
+
+				// Reset alerts
+				errorAlert.classList.add('d-none');
+				successAlert.classList.add('d-none');
+
+				// Disable button during submission
+				loginBtn.disabled = true;
+				loginBtn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Logging in...';
+
+				try {
+					console.log('[Login] Submitting login...');
+					const response = await fetch('/api/users/login', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						credentials: 'include',
+						body: JSON.stringify({ username, password })
+					});
+
+					console.log('[Login] Response status:', response.status);
+					
+					const data = await response.json();
+
+					if (!response.ok) {
+						throw new Error(data.error || 'Login failed');
+					}
+
+					console.log('[Login] User signed in successfully:', data.displayName);
+
+					// Show success message
+					successAlert.textContent = '✓ Login successful! Redirecting...';
+					successAlert.classList.remove('d-none');
+				
+				// Add short delay to ensure session is established
+				setTimeout(() => {
+					window.location.href = '/dashboard';
+				}, 1500);
+
+			} catch (err) {
+				errorAlert.textContent = '✗ ' + err.message;
+				errorAlert.classList.remove('d-none');
+				
+				// Try to guide user to registration if account not found
+				if (err.message.includes('Account not found')) {
+					// Show registration link after error
+					setTimeout(() => {
+						errorAlert.innerHTML = '✗ ' + err.message + ' <a href="/register" class="link-accent ms-2" style="text-decoration: underline;">Create account</a>';
+					}, 500);
+				}
+				
+					loginBtn.disabled = false;
+					loginBtn.innerHTML = 'Log In';
+				}
+			});
+		}
+
+		// SSO provider button handlers
+		document.getElementById('steamLoginBtn').addEventListener('click', () => {
+			window.location.href = '/auth/steam';
+		});
+
+		document.getElementById('googleLoginBtn').addEventListener('click', () => {
+			window.location.href = '/auth/google';
+		});
+	</script>
+	<script>
+		// Page transition animation
+		document.querySelectorAll('a[href]').forEach(a => {
+			if (a.hostname === location.hostname && !a.hash && !a.getAttribute('href').startsWith('#') && a.target !== '_blank') {
+				a.addEventListener('click', e => {
+					e.preventDefault();
+					const dest = a.href;
+					document.body.classList.add('page-exit');
+					setTimeout(() => window.location = dest, 300);
+				});
+			}
+		});
+
+		// Navbar scroll shadow (passive, cached)
+		const _nav = document.querySelector('.navbar');
+		let _scrollTick = false;
+		window.addEventListener('scroll', () => {
+			if (!_scrollTick) { _scrollTick = true; requestAnimationFrame(() => { _nav?.classList.toggle('scrolled', window.scrollY > 20); _scrollTick = false; }); }
+		}, { passive: true });
+	</script>

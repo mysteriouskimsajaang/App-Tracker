@@ -1,0 +1,48 @@
+{{> navbar-app activePage="users-list"}}
+
+<div class="container py-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="fw-bold mb-1">Community Directory</h1>
+            <p class="text-muted mb-0">Browse Backlog Hero members.</p>
+        </div>
+        <a class="btn btn-outline-light" href="/friends">Find Friends</a>
+    </div>
+    <div id="usersList" class="row g-3">
+        <div class="col-12 text-muted">Loading members...</div>
+    </div>
+</div>
+
+<script>
+    (async function loadUsers() {
+        const container = document.getElementById('usersList');
+        try {
+            const response = await fetch('/api/users-list', { credentials: 'include' });
+            if (!response.ok) throw new Error('Failed to load members');
+            const users = await response.json();
+            container.innerHTML = users.length ? users.map(user => `
+                <div class="col-md-6 col-lg-4">
+                    <a class="card h-100 text-decoration-none bg-section border-0 shadow-sm p-3" href="/profile-view?username=${encodeURIComponent(user.username)}">
+                        <div class="d-flex align-items-center gap-3">
+                            <img src="${user.avatar || 'https://ui-avatars.com/api/?name=User'}" alt="" width="52" height="52" class="rounded-circle">
+                            <div>
+                                <h5 class="mb-1">${escapeHtml(user.displayName || user.username)}</h5>
+                                <small class="text-muted">@${escapeHtml(user.username)}</small>
+                            </div>
+                        </div>
+                        <p class="text-muted small mt-3 mb-0">${escapeHtml(user.bio || 'No bio yet')}</p>
+                    </a>
+                </div>
+            `).join('') : '<div class="col-12 text-muted">No members found.</div>';
+        } catch (error) {
+            container.innerHTML = '<div class="col-12 text-danger">Unable to load members right now.</div>';
+            console.error(error);
+        }
+    })();
+
+    function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, character => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+        })[character]);
+    }
+</script>

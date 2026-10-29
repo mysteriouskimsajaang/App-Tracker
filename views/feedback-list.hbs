@@ -1,0 +1,43 @@
+{{> navbar-app activePage="feedback-list"}}
+
+<div class="container py-5">
+    <div class="mb-4">
+        <h1 class="fw-bold mb-1">Feedback Management</h1>
+        <p class="text-muted mb-0">Review messages submitted by the community.</p>
+    </div>
+    <div id="feedbackList" class="d-flex flex-column gap-3">
+        <div class="text-muted">Loading feedback...</div>
+    </div>
+</div>
+
+<script>
+    (async function loadFeedback() {
+        const container = document.getElementById('feedbackList');
+        try {
+            const response = await fetch('/api/feedback-list', { credentials: 'include' });
+            if (!response.ok) throw new Error('Failed to load feedback');
+            const feedback = await response.json();
+            container.innerHTML = feedback.length ? feedback.map(item => `
+                <article class="card bg-section border-0 shadow-sm">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between gap-3">
+                            <h5 class="mb-1">${escapeHtml(item.subject)}</h5>
+                            <small class="text-muted">${new Date(item.createdAt).toLocaleString()}</small>
+                        </div>
+                        <p class="small text-muted mb-2">${escapeHtml(item.name)} &lt;${escapeHtml(item.email)}&gt;</p>
+                        <p class="mb-0">${escapeHtml(item.message)}</p>
+                    </div>
+                </article>
+            `).join('') : '<div class="text-muted">No feedback has been submitted yet.</div>';
+        } catch (error) {
+            container.innerHTML = '<div class="text-danger">Unable to load feedback right now.</div>';
+            console.error(error);
+        }
+    })();
+
+    function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, character => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+        })[character]);
+    }
+</script>

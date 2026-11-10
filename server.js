@@ -12,6 +12,37 @@ const fetch = require('node-fetch');
 const passport = require('passport');
 const SteamStrategy = require('passport-steam').Strategy;
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
+
+// Fix: Patch openid's internal HTTP POST to use reliable fetch with modern User-Agent
+// (Steam / Cloudflare blocks default axios requests from openid with 403 or assertion errors)
+try {
+  const openidHttp = require('openid/http');
+  const qs = require('qs');
+  openidHttp.post = function (postUrl, data, callback) {
+    const body = qs.stringify(data);
+    fetch(postUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(body).toString(),
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      },
+      body: body
+    })
+    .then(async (res) => {
+      const text = await res.text();
+      console.log('[STEAM OPENID HTTP] Status:', res.status, '| Response:', text.trim());
+      callback(text, res.headers, res.status);
+    })
+    .catch((err) => {
+      console.error('[STEAM OPENID HTTP] Request error:', err.message);
+      callback(null, null, 500);
+    });
+  };
+  console.log('[STARTUP] Successfully patched openid HTTP client');
+} catch (e) {
+  console.warn('[STARTUP] Could not patch openid HTTP client:', e.message);
+}
 const connectDB = require('./model/db');
 const User = require('./model/User');
 const Game = require('./model/Game');
@@ -58,7 +89,7 @@ app.set('views', __dirname + '/views');
 app.set('view cache', true); // Compile templates once instead of on every request
 
 // --- Trust proxy (required for Render / Heroku / any reverse proxy) ---
-app.set('trust proxy', 1);
+app.set('trust proxy', true);
 
 // --- Session Configuration (MongoDB-backed for persistence across restarts) ---
 app.use(session({
@@ -1034,15 +1065,16 @@ app.get('/auth/steam', (req, res, next) => {
 
 // GET /auth/steam/callback - Steam redirects back here after login
 app.get('/auth/steam/callback', (req, res, next) => {
-  console.log('[STEAM AUTH] Callback hit! Query params:', Object.keys(req.query).join(', '));
+  console.log('[STEAM AUTH] Callback hit! return_to:', req.query['openid.return_to'], '| claimed_id:', req.query['openid.claimed_id']);
   passport.authenticate('steam', (err, user, info) => {
     if (err) {
       console.error('[STEAM AUTH] Error:', err.message || err);
+      if (err.openidError) console.error('[STEAM AUTH] OpenID detail:', err.openidError);
       return res.redirect('/login');
     }
 
     if (!user) {
-      console.log('[STEAM AUTH] Authentication failed');
+      console.log('[STEAM AUTH] Authentication failed, info:', info);
       return res.redirect('/login');
     }
 

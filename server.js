@@ -302,7 +302,8 @@ passport.use(new SteamStrategy({
   returnURL: `${BASE_URL}/auth/steam/callback`,
   realm: `${BASE_URL}/`,
   apiKey: STEAM_API_KEY,
-  passReqToCallback: true
+  passReqToCallback: true,
+  stateless: true
 },
   async (req, identifier, profile, done) => {
     try {

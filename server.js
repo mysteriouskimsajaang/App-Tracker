@@ -29,6 +29,9 @@ if (process.env.NODE_ENV === 'production' && !process.env.MONGODB_URI) {
 }
 const MONGO_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/backlog-hero';
 const BASE_URL = (process.env.BASE_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`).replace(/\/+$/, '');
+console.log('[STARTUP] BASE_URL:', BASE_URL);
+console.log('[STARTUP] STEAM_API_KEY set:', !!process.env.STEAM_API_KEY);
+console.log('[STARTUP] NODE_ENV:', process.env.NODE_ENV);
 app.use(express.json({ limit: '150mb' })); // Allow large base64 image and video payloads
 const sessionStore = process.env.NODE_ENV === 'production'
   ? MongoStore.create({
@@ -1023,13 +1026,17 @@ async function syncSteamFriends(user) {
 }
 
 // GET /auth/steam - Redirect to Steam login page
-app.get('/auth/steam', passport.authenticate('steam', { failureRedirect: '/login' }));
+app.get('/auth/steam', (req, res, next) => {
+  console.log('[STEAM AUTH] Starting Steam login flow. returnURL:', `${BASE_URL}/auth/steam/callback`);
+  passport.authenticate('steam', { failureRedirect: '/login' })(req, res, next);
+});
 
 // GET /auth/steam/callback - Steam redirects back here after login
 app.get('/auth/steam/callback', (req, res, next) => {
+  console.log('[STEAM AUTH] Callback hit! Query params:', Object.keys(req.query).join(', '));
   passport.authenticate('steam', (err, user, info) => {
     if (err) {
-      console.error('[STEAM AUTH] Error:', err);
+      console.error('[STEAM AUTH] Error:', err.message || err);
       return res.redirect('/login');
     }
 

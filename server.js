@@ -10,39 +10,7 @@ const MongoStore = require('connect-mongo');
 const compression = require('compression');
 const fetch = require('node-fetch');
 const passport = require('passport');
-const SteamStrategy = require('passport-steam').Strategy;
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
-
-// Fix: Patch openid's internal HTTP POST to use reliable fetch with modern User-Agent
-// (Steam / Cloudflare blocks default axios requests from openid with 403 or assertion errors)
-try {
-  const openidHttp = require('openid/http');
-  const qs = require('qs');
-  openidHttp.post = function (postUrl, data, callback) {
-    const body = qs.stringify(data);
-    fetch(postUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Content-Length': Buffer.byteLength(body).toString(),
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      },
-      body: body
-    })
-    .then(async (res) => {
-      const text = await res.text();
-      console.log('[STEAM OPENID HTTP] Status:', res.status, '| Response:', text.trim());
-      callback(text, res.headers, res.status);
-    })
-    .catch((err) => {
-      console.error('[STEAM OPENID HTTP] Request error:', err.message);
-      callback(null, null, 500);
-    });
-  };
-  console.log('[STARTUP] Successfully patched openid HTTP client');
-} catch (e) {
-  console.warn('[STARTUP] Could not patch openid HTTP client:', e.message);
-}
 const connectDB = require('./model/db');
 const User = require('./model/User');
 const Game = require('./model/Game');
@@ -329,56 +297,7 @@ if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
   ));
 }
 
-passport.use(new SteamStrategy({
-  returnURL: `${BASE_URL}/auth/steam/callback`,
-  realm: `${BASE_URL}/`,
-  apiKey: STEAM_API_KEY,
-  passReqToCallback: true,
-  stateless: true
-},
-  async (req, identifier, profile, done) => {
-    try {
-      const steamId = profile.id;
-      
-      // If user is already logged in, LINK the Steam account to that user
-      if (req.session && req.session.userId) {
-        let currentUser = await User.findById(req.session.userId);
-        if (currentUser) {
-          currentUser.steamId = steamId;
-          await currentUser.save();
-          console.log('[STEAM AUTH] Linked Steam ID', steamId, 'to existing logged-in user:', currentUser.displayName);
-          return done(null, currentUser);
-        }
-      }
-      // Try to find user by Steam ID
-      let user = await User.findOne({ steamId });
-      if (user) {
-        console.log('[STEAM AUTH] Existing user found:', user.displayName, '| Steam ID:', steamId);
-        return done(null, user);
-      }
-      
-      // Auto-create new account for Steam users
-      console.log('[STEAM AUTH] Creating new user for Steam ID:', steamId);
-      user = new User({
-        username: 'steam_' + steamId,
-        email: steamId + '@steam.local',
-        password: require('crypto').randomBytes(32).toString('hex'),
-        displayName: profile.displayName || 'Steam User',
-        avatar: profile.photos && profile.photos[2] ? profile.photos[2].value
-          : profile.photos && profile.photos[0] ? profile.photos[0].value
-            : undefined,
-        steamId: steamId,
-      });
-      await user.save();
-      user.isNewAccount = true;
-      console.log('[STEAM AUTH] Created new user:', user.displayName, '| Steam ID:', steamId);
-      return done(null, user);
-    } catch (err) {
-      return done(err, null);
-    }
-  }
-));
-
+// Passport session setup
 app.use(passport.initialize());
 app.use(passport.session());
 
@@ -1058,30 +977,117 @@ async function syncSteamFriends(user) {
 }
 
 // GET /auth/steam - Redirect to Steam login page
-app.get('/auth/steam', (req, res, next) => {
-  console.log('[STEAM AUTH] Starting Steam login flow. returnURL:', `${BASE_URL}/auth/steam/callback`);
-  passport.authenticate('steam', { failureRedirect: '/login' })(req, res, next);
+app.get('/auth/steam', (req, res) => {
+  const returnTo = `${BASE_URL}/auth/steam/callback`;
+  const realm = `${BASE_URL}/`;
+  console.log('[STEAM AUTH] Starting Steam login flow. returnURL:', returnTo);
+
+  const params = new URLSearchParams({
+    'openid.ns': 'http://specs.openid.net/auth/2.0',
+    'openid.mode': 'checkid_setup',
+    'openid.return_to': returnTo,
+    'openid.realm': realm,
+    'openid.identity': 'http://specs.openid.net/auth/2.0/identifier_select',
+    'openid.claimed_id': 'http://specs.openid.net/auth/2.0/identifier_select'
+  });
+
+  res.redirect(`https://steamcommunity.com/openid/login?${params.toString()}`);
 });
 
 // GET /auth/steam/callback - Steam redirects back here after login
-app.get('/auth/steam/callback', (req, res, next) => {
-  console.log('[STEAM AUTH] Callback hit! return_to:', req.query['openid.return_to'], '| claimed_id:', req.query['openid.claimed_id']);
-  passport.authenticate('steam', (err, user, info) => {
-    if (err) {
-      console.error('[STEAM AUTH] Error:', err.message || err);
-      if (err.openidError) console.error('[STEAM AUTH] OpenID detail:', err.openidError);
+app.get('/auth/steam/callback', async (req, res) => {
+  try {
+    console.log('[STEAM AUTH] Callback hit! return_to:', req.query['openid.return_to'], '| claimed_id:', req.query['openid.claimed_id']);
+
+    if (!req.query['openid.claimed_id']) {
+      console.error('[STEAM AUTH] Missing openid.claimed_id in query');
       return res.redirect('/login');
     }
 
-    if (!user) {
-      console.log('[STEAM AUTH] Authentication failed, info:', info);
+    // Verify assertion directly with Steam
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(req.query)) {
+      params.append(key, value);
+    }
+    params.set('openid.mode', 'check_authentication');
+
+    const verifyRes = await fetch('https://steamcommunity.com/openid/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      },
+      body: params.toString()
+    });
+
+    const verifyBody = await verifyRes.text();
+    console.log('[STEAM AUTH] Steam verification response:', verifyBody.trim());
+
+    if (!verifyBody.includes('is_valid:true')) {
+      console.error('[STEAM AUTH] Assertion invalid! Response from Steam:', verifyBody);
       return res.redirect('/login');
+    }
+
+    // Extract 64-bit Steam ID from claimed_id
+    const claimedId = req.query['openid.claimed_id'] || '';
+    const match = claimedId.match(/\/id\/(\d+)$/);
+    if (!match || !match[1]) {
+      console.error('[STEAM AUTH] Could not parse Steam ID from claimed_id:', claimedId);
+      return res.redirect('/login');
+    }
+    const steamId = match[1];
+    console.log('[STEAM AUTH] Verified Steam ID:', steamId);
+
+    // Fetch user profile from Steam Web API
+    let profile = { displayName: 'Steam User', avatar: undefined };
+    if (STEAM_API_KEY) {
+      try {
+        const steamUrl = `https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=${STEAM_API_KEY}&steamids=${steamId}`;
+        const steamRes = await fetch(steamUrl);
+        const steamData = await steamRes.json();
+        const player = steamData?.response?.players?.[0];
+        if (player) {
+          profile.displayName = player.personaname || 'Steam User';
+          profile.avatar = player.avatarfull || player.avatarmedium || player.avatar;
+        }
+      } catch (profileErr) {
+        console.warn('[STEAM AUTH] Could not fetch profile from Steam Web API:', profileErr.message);
+      }
+    }
+
+    // If user is already logged in, LINK the Steam account to that user
+    let user;
+    if (req.session && req.session.userId) {
+      user = await User.findById(req.session.userId);
+      if (user) {
+        user.steamId = steamId;
+        await user.save();
+        console.log('[STEAM AUTH] Linked Steam ID', steamId, 'to existing logged-in user:', user.displayName);
+      }
+    }
+
+    // Otherwise, find existing user by Steam ID or create new account
+    if (!user) {
+      user = await User.findOne({ steamId });
+      if (user) {
+        console.log('[STEAM AUTH] Existing user found:', user.displayName, '| Steam ID:', steamId);
+      } else {
+        console.log('[STEAM AUTH] Creating new user for Steam ID:', steamId);
+        user = new User({
+          username: 'steam_' + steamId,
+          email: steamId + '@steam.local',
+          password: require('crypto').randomBytes(32).toString('hex'),
+          displayName: profile.displayName,
+          avatar: profile.avatar,
+          steamId: steamId,
+        });
+        await user.save();
+        user.isNewAccount = true;
+        console.log('[STEAM AUTH] Created new user:', user.displayName, '| Steam ID:', steamId);
+      }
     }
 
     // User authenticated successfully - establish session directly
-    // NOTE: We skip req.logIn() because Passport's session.regenerate() destroys
-    // the current session in MongoDB, causing the user to be logged out.
-    // Our app uses req.session.userId for auth, not Passport's req.user.
     req.session.userId = user._id.toString();
     req.session.username = user.username;
     console.log('[STEAM AUTH] Login successful. User:', user.displayName);
@@ -1110,7 +1116,10 @@ app.get('/auth/steam/callback', (req, res, next) => {
       if (saveErr) console.error('[STEAM AUTH] Session save error:', saveErr);
       res.redirect(redirectTarget);
     });
-  })(req, res, next);
+  } catch (err) {
+    console.error('[STEAM AUTH] Unhandled error during Steam callback:', err);
+    res.redirect('/login');
+  }
 });
 
 // --- GOOGLE AUTH ROUTES ---
